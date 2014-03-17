@@ -1,0 +1,172 @@
+#!/usr/bin/ruby
+
+require 'getoptlong'
+
+# utils
+module PowerOfTenPrefix
+  def to_powten
+    to_pow(1000)
+  end
+
+  def to_powiten
+    to_pow(1024)
+  end
+
+  private
+
+  def to_pow(kilo=1000)
+    mega = kilo*kilo
+    giga = kilo*mega
+    tera = kilo*giga
+    size = self.to_f
+    begin
+      return "%d " % size if size < kilo
+      return "%.2f k" % (size/kilo) if size < mega
+      return "%.2f M" % (size/mega) if size < giga
+      return "%.2f G" % (size/giga) if size < tera
+      return "%.2f T" % (size/tera)
+    rescue
+      #just return nothing
+    end
+  end
+end
+
+class Numeric
+  include PowerOfTenPrefix
+end
+
+# defaults
+$base = [ "." ]
+$depth = 0
+$sort_size = false
+$sort_reverse = false
+
+opts = GetoptLong.new(
+	[ "--depth", "-d", GetoptLong::REQUIRED_ARGUMENT],
+	[ "--sort-size", "-s", GetoptLong::NO_ARGUMENT],
+	[ "--reverse", "-r", GetoptLong::NO_ARGUMENT],
+	[ "--help",  "-h", GetoptLong::NO_ARGUMENT]
+) 
+opts.each {|opt,arg|
+	# we only have one option
+	if opt == "--help"
+		usage = [
+		  "Usage: foldersize [ OPTIONS ] [ base ... ]",
+			"",
+			"  ``base'' is the name of a directory that will be sized",
+			"    according to the specified depth.",
+			"",
+			"  OPTIONS are zero or more of the following",
+			"",
+			"  --depth depth, -d depth",
+			"    ``depth'' is the folder depth at which the sizing of folders begins.",
+			"    For example,",
+			"",
+			"      foldersize -d 2 mydir",
+			"",
+			"    will size all folders in the subfolders of ``mydir'', while",
+			"",
+			"      foldersize mydir",
+			"",
+			"    will size ``mydir'' itself, i.e., the default depth is 0.",
+			"",
+			"  --sort-size, -s",
+			"    Specifies that the output should be sorted by size rather than name.",
+			"",
+			"  --reverse, -r",
+			"    Reverses the output order."
+		]
+		puts usage
+		exit 0
+	end
+	$depth = arg.to_i if (opt == "--depth")
+	$sort_size = true if (opt == "--sort-size")
+	$sort_reverse = true if (opt == "--reverse")
+}
+
+# setup the new base dirs
+new_root = Array.new
+ARGV.each {|arg|
+	new_root.push(arg)
+}
+$base = new_root unless new_root.size == 0
+
+def find_folders(base,depth)
+	if File.ftype(base) == "directory"
+		return find_folders_recursive(base,depth)
+	else
+		$stderr.printf("%s either does not exist or is not a directory.\n",base)
+		return Array.new
+	end
+end
+
+def find_folders_recursive(path, depth)
+	folders = Array.new
+	if (depth > 0)
+		begin
+			Dir.foreach(path) {|entry|
+				next if (entry == "." || entry == "..")
+				entry_path = File.join(path,entry)
+				next if (File.ftype(entry_path) != "directory")
+				folders.concat(find_folders_recursive(entry_path, depth - 1))
+			}
+		rescue SystemCallError
+			$stderr.printf("I cannot read %s.\n",path)
+		end
+	else
+		folders.push(path) unless (File.ftype(path) != "directory")
+	end
+	return folders
+end
+
+# find folders at specified depth
+$folders = Array.new
+$base.each {|base|
+	f = find_folders(base, $depth)
+	$folders.concat(f)
+}
+
+# size the folders
+
+def size_folder(path)
+	size = 0
+	begin
+		Dir.foreach(path) {|entry|
+			next if (entry == "." || entry == "..")
+			entry_path = File.join(path,entry)
+			if (File.ftype(entry_path) == "directory")
+				size = size + size_folder(entry_path)
+			else
+				size = size + File.lstat(entry_path).size
+			end
+		}
+	rescue SystemCallError
+		$stderr.printf("I cannot read %s.\n",path)
+	end
+	return size
+end
+
+$sizes = Hash.new
+$folders.each {|folder|
+	next if $sizes.has_key?(folder)
+	$sizes[folder] = size_folder(folder)
+}
+
+# print the sizes
+sorted = $sizes.sort {|x,y|
+	if ($sort_size == true)
+		x[1] <=> y[1]
+	else
+		x[0] <=> y[0]
+	end
+}
+keys = sorted.collect {|x| x[0] }
+keys.reverse! if ($sort_reverse == true)
+keys.each {|folder|
+	size = $sizes[folder]
+	field_width = 10
+	$stdout.printf("%*sB %*siB   %s\n",
+	  field_width, size.to_powten,
+	  field_width, size.to_powiten,
+	  folder)
+}

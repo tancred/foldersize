@@ -1,0 +1,24 @@
+Usage: foldersize [ OPTIONS ] [ base ... ]
+
+  ``base'' is the name of a directory that will be sized
+    according to the specified depth.
+
+  OPTIONS are zero or more of the following
+
+  --depth depth, -d depth
+    ``depth'' is the folder depth at which the sizing of folders begins.
+    For example,
+
+      foldersize -d 2 mydir
+
+    will size all folders in the subfolders of ``mydir'', while
+
+      foldersize mydir
+
+    will size ``mydir'' itself, i.e., the default depth is 0.
+
+  --sort-size, -s
+    Specifies that the output should be sorted by size rather than name.
+
+  --reverse, -r
+    Reverses the output order.
